@@ -56,6 +56,8 @@ export const getLabelFilterConfig =
       label: "Label",
       ...params,
       icon: params.filterIcon,
+      // several Label conditions in one view, combined with AND (needs the subquery label filters in the API)
+      allowMultipleFilters: true,
       supportedOperatorConfigsMap: new Map([
         createOperatorConfigEntry(COLLECTION_OPERATOR.IN, params, (updatedParams) =>
           getLabelMultiSelectConfig(updatedParams, EQUALITY_OPERATOR.EXACT)

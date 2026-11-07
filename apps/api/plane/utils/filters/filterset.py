@@ -8,7 +8,7 @@ from django.db import models
 from django.db.models import Q
 from django_filters import FilterSet, filters
 
-from plane.db.models import Issue
+from plane.db.models import Issue, IssueLabel
 
 
 class UUIDInFilter(filters.BaseInFilter, filters.UUIDFilter):
@@ -268,19 +268,17 @@ class IssueFilterSet(BaseFilterSet):
             issue_mention__deleted_at__isnull=True,
         )
 
+    # Label filters use a subquery on issue_labels instead of joining through label_issue. With a join,
+    # two label conditions ANDed in one filter() land on the same joined row, so "label A AND label B"
+    # would need a single row that is both and never matches. A subquery per condition checks each one
+    # on its own, so several Label conditions in a view combine correctly.
     def filter_label_id(self, queryset, name, value):
         """Filter by label ID, excluding soft deleted labels"""
-        return Q(
-            label_issue__label_id=value,
-            label_issue__deleted_at__isnull=True,
-        )
+        return Q(id__in=IssueLabel.all_objects.filter(label_id=value, deleted_at__isnull=True).values("issue_id"))
 
     def filter_label_id_in(self, queryset, name, value):
         """Filter by label IDs (in), excluding soft deleted labels"""
-        return Q(
-            label_issue__label_id__in=value,
-            label_issue__deleted_at__isnull=True,
-        )
+        return Q(id__in=IssueLabel.all_objects.filter(label_id__in=value, deleted_at__isnull=True).values("issue_id"))
 
     def filter_subscriber_id(self, queryset, name, value):
         """Filter by subscriber ID, excluding soft deleted users"""
