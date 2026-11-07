@@ -21,6 +21,17 @@ import { InboxIssueService } from "@/services/inbox";
 
 const DISCIPLINES = ["Tech", "Level Design", "Art", "Game Design", "Audio", "Animation", "UI"];
 
+const KEY_LEGEND: [string, string][] = [
+  ["J / K", "Move"],
+  ["Enter", "Accept"],
+  ["Delete", "Decline"],
+  ["D", "Duplicate"],
+  ["1-7", "Discipline"],
+];
+
+const KBD_CLASS =
+  "inline-flex h-6 min-w-6 items-center justify-center rounded-sm border border-strong bg-surface-1 px-1.5 font-code text-12 font-medium text-primary";
+
 const inboxIssueService = new InboxIssueService();
 
 type Props = {
@@ -44,6 +55,7 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
   // local state
   const [index, setIndex] = useState(0);
   const [isDuplicateOpen, setIsDuplicateOpen] = useState(false);
+  const [isConfirmingAccept, setIsConfirmingAccept] = useState(false);
   const [description, setDescription] = useState<{ id: string; html: string } | undefined>(undefined);
   // derived values
   const ids = filteredInboxIssueIds;
@@ -95,11 +107,21 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isDuplicateOpen || isTypingInInput(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      // while the accept prompt is open, only Enter (confirm) and Escape (cancel) do anything
+      if (isConfirmingAccept) {
+        if (e.key === "Enter" && !e.repeat) {
+          inboxIssue?.updateInboxIssueStatus(EInboxIssueStatus.ACCEPTED);
+          setIsConfirmingAccept(false);
+        } else if (e.key === "Escape") setIsConfirmingAccept(false);
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const key = e.key.toLowerCase();
       if (key === "j") setIndex(Math.min(currentIndex + 1, ids.length - 1));
       else if (key === "k") setIndex(Math.max(currentIndex - 1, 0));
-      else if (key === "a") inboxIssue?.updateInboxIssueStatus(EInboxIssueStatus.ACCEPTED);
-      else if (key === "x") inboxIssue?.updateInboxIssueStatus(EInboxIssueStatus.DECLINED);
+      else if (e.key === "Enter" && !e.repeat && inboxIssue) setIsConfirmingAccept(true);
+      else if (e.key === "Delete" && inboxIssue) inboxIssue.updateInboxIssueStatus(EInboxIssueStatus.DECLINED);
       else if (key === "d" && inboxIssue) setIsDuplicateOpen(true);
       else if (/^[1-7]$/.test(key)) toggleLabel(disciplineLabels[Number(key) - 1]?.id);
       else return;
@@ -111,15 +133,22 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
   });
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden">
+    <div className="relative flex h-full w-full flex-col overflow-hidden">
       <div className="flex items-center justify-between gap-2 border-b border-subtle px-5 py-2">
         <span className="text-13 text-tertiary">
           {ids.length > 0
             ? `${currentIndex + 1} / ${inboxIssuePaginationInfo?.total_results ?? ids.length} pending`
             : "Nothing pending"}
         </span>
-        <span className="text-11 text-tertiary">J/K move · A accept · X decline · D duplicate · 1-7 discipline</span>
         <FiltersRoot />
+      </div>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-subtle bg-layer-1 px-5 py-2.5">
+        {KEY_LEGEND.map(([keys, action]) => (
+          <span key={action} className="flex items-center gap-1.5 text-13 text-secondary">
+            <kbd className={KBD_CLASS}>{keys}</kbd>
+            {action}
+          </span>
+        ))}
       </div>
       <InboxIssueAppliedFilters />
 
@@ -141,12 +170,13 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
                   disabled={!labelId}
                   onClick={() => toggleLabel(labelId)}
                   className={cn(
-                    "rounded-md border px-2 py-1 text-12",
+                    "flex items-center gap-1.5 rounded-md border px-2 py-1 text-13",
                     isOn ? "border-accent-strong bg-accent-primary/20 text-primary" : "border-subtle text-tertiary",
                     !labelId && "opacity-40"
                   )}
                 >
-                  {i + 1} {name}
+                  <kbd className={KBD_CLASS}>{i + 1}</kbd>
+                  {name}
                 </button>
               );
             })}
@@ -175,6 +205,27 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
               workspaceSlug={workspaceSlug}
             />
           )}
+        </div>
+      )}
+
+      {isConfirmingAccept && inboxIssue && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-backdrop">
+          <div className="shadow-lg flex max-w-lg flex-col gap-4 rounded-lg border border-subtle bg-surface-1 p-5">
+            <div className="text-15 font-semibold text-primary">
+              Accept {currentProjectDetails?.identifier}-{inboxIssue.issue.sequence_id}?
+            </div>
+            <div className="line-clamp-2 text-13 text-secondary">{inboxIssue.issue.name}</div>
+            <div className="flex items-center gap-5 text-13 text-secondary">
+              <span className="flex items-center gap-1.5">
+                <kbd className={KBD_CLASS}>Enter</kbd>
+                Accept
+              </span>
+              <span className="flex items-center gap-1.5">
+                <kbd className={KBD_CLASS}>Esc</kbd>
+                Cancel
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
