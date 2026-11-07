@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { EInboxIssueCurrentTab, EInboxIssueStatus } from "@plane/types";
 import { cn } from "@plane/utils";
@@ -52,6 +52,7 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
     inboxIssuePaginationInfo,
     getIssueInboxByIssueId,
     handleCurrentTab,
+    fetchInboxIssues,
     fetchInboxPaginationIssues,
   } = useProjectInbox();
   const { getProjectLabels } = useLabel();
@@ -62,9 +63,14 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
   const [isDuplicateOpen, setIsDuplicateOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<"accept" | "decline" | undefined>(undefined);
   const [description, setDescription] = useState<{ id: string; html: string } | undefined>(undefined);
+  // ids already triaged on this screen: hidden at once, before the server answers
+  const [doneIds, setDoneIds] = useState<string[]>([]);
+  // set by any triage action; tells the loader that page offsets are stale
+  const hasActedRef = useRef(false);
   // derived values
-  const ids = filteredInboxIssueIds;
-  const currentIndex = Math.min(index, ids.length - 1);
+  const ids = filteredInboxIssueIds.filter((id) => !doneIds.includes(id));
+  const currentIndex = Math.max(0, Math.min(index, ids.length - 1));
+  const totalPending = inboxIssuePaginationInfo?.total_results ?? 0;
   const currentId = ids.length > 0 ? ids[currentIndex] : undefined;
   const inboxIssue = currentId ? getIssueInboxByIssueId(currentId) : undefined;
   const projectLabels = getProjectLabels(projectId) ?? [];
@@ -91,10 +97,33 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
     };
   }, [workspaceSlug, projectId, currentId]);
 
-  // load the next page before J runs off the end of what's loaded
+  // Load more before the list runs out. The store pages by offset, and every accept/decline shifts the
+  // server's pending list, so after any action the offsets are wrong (items get skipped, and the store's
+  // "all loaded" check undercounts). After an action, reload the first page instead: triaged items are no
+  // longer pending, so page one is exactly the next untriaged batch. With no actions, plain paging is fine.
   useEffect(() => {
-    if (ids.length > 0 && index >= ids.length - 2) fetchInboxPaginationIssues(workspaceSlug, projectId);
-  }, [index, ids.length, workspaceSlug, projectId, fetchInboxPaginationIssues]);
+    if (ids.length - currentIndex > 2) return;
+    if (hasActedRef.current) {
+      hasActedRef.current = false;
+      setIndex(0);
+      void fetchInboxIssues(workspaceSlug, projectId, "mutation-loading");
+    } else if (totalPending > ids.length) void fetchInboxPaginationIssues(workspaceSlug, projectId);
+  }, [currentIndex, ids.length, totalPending, workspaceSlug, projectId, fetchInboxIssues, fetchInboxPaginationIssues]);
+
+  // Hide the item at once and run the action. The store's actions swallow errors and put the status back,
+  // so if the item is still pending afterwards the request failed: show it again.
+  const triage = (run: (issue: NonNullable<typeof inboxIssue>) => Promise<void>) => {
+    if (!inboxIssue || !currentId) return;
+    const issue = inboxIssue;
+    const id = currentId;
+    hasActedRef.current = true;
+    setDoneIds((prev) => [...prev, id]);
+    const execute = async () => {
+      await run(issue);
+      if (issue.status === EInboxIssueStatus.PENDING) setDoneIds((prev) => prev.filter((x) => x !== id));
+    };
+    void execute();
+  };
 
   const toggleLabel = (labelId: string | undefined) => {
     if (!inboxIssue || !labelId) return;
@@ -104,8 +133,8 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
     inboxIssue.updateIssue({ label_ids: next });
   };
 
-  const handleDuplicate = async (issueId: string) => {
-    await inboxIssue?.updateInboxIssueDuplicateTo(issueId);
+  const handleDuplicate = (issueId: string) => {
+    triage((issue) => issue.updateInboxIssueDuplicateTo(issueId));
   };
 
   // keyboard: capture phase on window, so Plane's global shortcuts never see these keys
@@ -115,9 +144,8 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
       // while a confirm prompt is open, only Enter (confirm) and Escape (cancel) do anything
       if (pendingAction) {
         if (e.key === "Enter" && !e.repeat) {
-          inboxIssue?.updateInboxIssueStatus(
-            pendingAction === "accept" ? EInboxIssueStatus.ACCEPTED : EInboxIssueStatus.DECLINED
-          );
+          const status = pendingAction === "accept" ? EInboxIssueStatus.ACCEPTED : EInboxIssueStatus.DECLINED;
+          triage((issue) => issue.updateInboxIssueStatus(status));
           setPendingAction(undefined);
         } else if (e.key === "Escape") setPendingAction(undefined);
         e.preventDefault();
@@ -125,7 +153,7 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
         return;
       }
       const key = e.key.toLowerCase();
-      if (key === "j") setIndex(Math.min(currentIndex + 1, ids.length - 1));
+      if (key === "j") setIndex(Math.max(0, Math.min(currentIndex + 1, ids.length - 1)));
       else if (key === "k") setIndex(Math.max(currentIndex - 1, 0));
       else if (e.key === "Enter" && !e.repeat && inboxIssue) setPendingAction("accept");
       else if (e.key === "Delete" && !e.repeat && inboxIssue) setPendingAction("decline");
@@ -144,8 +172,10 @@ export const FastTriageRoot = observer(function FastTriageRoot(props: Props) {
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-subtle bg-layer-1 px-5 py-2">
         <span className="text-13 text-tertiary">
           {ids.length > 0
-            ? `${currentIndex + 1} / ${inboxIssuePaginationInfo?.total_results ?? ids.length} pending`
-            : "Nothing pending"}
+            ? `${currentIndex + 1} / ${Math.max(totalPending, ids.length)} pending`
+            : totalPending > 0
+              ? "Loading more…"
+              : "Nothing pending"}
         </span>
         {KEY_LEGEND.map(([keys, action]) => (
           <span key={action} className="flex items-center gap-1.5 text-13 text-secondary">
