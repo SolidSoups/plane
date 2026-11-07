@@ -215,6 +215,10 @@ export const coreRoutes: RouteConfigEntry[] = [
               ":workspaceSlug/projects/:projectId/intake",
               "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/intake/page.tsx"
             ),
+            route(
+              ":workspaceSlug/projects/:projectId/intake/fast",
+              "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/intake/fast/page.tsx"
+            ),
           ]),
         ]),
 
