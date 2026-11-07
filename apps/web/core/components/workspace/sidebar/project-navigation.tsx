@@ -5,7 +5,9 @@
  */
 
 import React, { useCallback, useMemo } from "react";
+import { sortBy } from "lodash-es";
 import { observer } from "mobx-react";
+import { Zap } from "lucide-react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { EUserPermissionsLevel, EUserPermissions } from "@plane/constants";
@@ -69,12 +71,12 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
   };
 
   const baseNavigation = useCallback(
-    (workspaceSlug: string, projectId: string): TNavigationItem[] => [
+    (navWorkspaceSlug: string, navProjectId: string): TNavigationItem[] => [
       {
         i18n_key: "sidebar.work_items",
         key: "work_items",
         name: "Work items",
-        href: `/${workspaceSlug}/projects/${projectId}/issues`,
+        href: `/${navWorkspaceSlug}/projects/${navProjectId}/issues`,
         icon: WorkItemsIcon,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
         shouldRender: true,
@@ -84,7 +86,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
         i18n_key: "sidebar.cycles",
         key: "cycles",
         name: "Cycles",
-        href: `/${workspaceSlug}/projects/${projectId}/cycles`,
+        href: `/${navWorkspaceSlug}/projects/${navProjectId}/cycles`,
         icon: CycleIcon,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
         shouldRender: project?.cycle_view ?? false,
@@ -94,7 +96,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
         i18n_key: "sidebar.modules",
         key: "modules",
         name: "Modules",
-        href: `/${workspaceSlug}/projects/${projectId}/modules`,
+        href: `/${navWorkspaceSlug}/projects/${navProjectId}/modules`,
         icon: ModuleIcon,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
         shouldRender: project?.module_view ?? false,
@@ -104,7 +106,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
         i18n_key: "sidebar.views",
         key: "views",
         name: "Views",
-        href: `/${workspaceSlug}/projects/${projectId}/views`,
+        href: `/${navWorkspaceSlug}/projects/${navProjectId}/views`,
         icon: ViewsIcon,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
         shouldRender: project?.issue_views_view ?? false,
@@ -114,7 +116,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
         i18n_key: "sidebar.pages",
         key: "pages",
         name: "Pages",
-        href: `/${workspaceSlug}/projects/${projectId}/pages`,
+        href: `/${navWorkspaceSlug}/projects/${navProjectId}/pages`,
         icon: PageIcon,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
         shouldRender: project?.page_view ?? false,
@@ -124,11 +126,21 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
         i18n_key: "sidebar.intake",
         key: "intake",
         name: "Intake",
-        href: `/${workspaceSlug}/projects/${projectId}/intake`,
+        href: `/${navWorkspaceSlug}/projects/${navProjectId}/intake`,
         icon: IntakeIcon,
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
         shouldRender: project?.inbox_view ?? false,
         sortOrder: 6,
+      },
+      {
+        i18n_key: "", // no translation key: the label falls back to `name`
+        key: "fast_intake",
+        name: "Fast intake",
+        href: `/${navWorkspaceSlug}/projects/${navProjectId}/intake/fast`,
+        icon: Zap,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER],
+        shouldRender: project?.inbox_view ?? false,
+        sortOrder: 7,
       },
     ],
     [project]
@@ -136,20 +148,18 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
 
   // memoized navigation items and adding additional navigation items
   const navigationItemsMemo = useMemo(() => {
-    const navigationItems = (workspaceSlug: string, projectId: string): TNavigationItem[] => {
-      const navItems = baseNavigation(workspaceSlug, projectId);
+    const navigationItems = (navWorkspaceSlug: string, navProjectId: string): TNavigationItem[] => {
+      const navItems = baseNavigation(navWorkspaceSlug, navProjectId);
 
       if (additionalNavigationItems) {
-        navItems.push(...additionalNavigationItems(workspaceSlug, projectId));
+        navItems.push(...additionalNavigationItems(navWorkspaceSlug, navProjectId));
       }
 
       return navItems;
     };
 
     // sort navigation items by sortOrder
-    const sortedNavigationItems = navigationItems(workspaceSlug, projectId).sort(
-      (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
-    );
+    const sortedNavigationItems = sortBy(navigationItems(workspaceSlug, projectId), (item) => item.sortOrder || 0);
 
     return sortedNavigationItems;
   }, [workspaceSlug, projectId, baseNavigation, additionalNavigationItems]);
@@ -164,7 +174,9 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
       const isWorkItemActive = item.key === "work_items" && workItemCondition;
       const isEpicActive = item.key === "epics" && epicCondition;
       // pathname condition
-      const isPathnameActive = pathname.includes(item.href);
+      // "/intake/fast" contains "/intake", so keep the plain Intake item from lighting up on the fast screen
+      const isPathnameActive =
+        pathname.includes(item.href) && !(item.key === "intake" && pathname.includes("/intake/fast"));
       // return
       return isWorkItemActive || isEpicActive || isPathnameActive;
     },
@@ -181,7 +193,8 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
         const hasAccess = allowPermissions(item.access, EUserPermissionsLevel.PROJECT, workspaceSlug, project.id);
         if (!hasAccess) return null;
 
-        const shouldShowCount = item.key === "intake" && (project.intake_count ?? 0) > 0;
+        const shouldShowCount =
+          (item.key === "intake" || item.key === "fast_intake") && (project.intake_count ?? 0) > 0;
 
         return (
           <Link key={item.key} href={item.href} onClick={handleProjectClick}>
@@ -191,7 +204,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
                   <item.icon
                     className={`size-4 flex-shrink-0 ${item.name === "Intake" ? "stroke-1" : "stroke-[1.5]"}`}
                   />
-                  <span className="text-11 font-medium">{t(item.i18n_key)}</span>
+                  <span className="text-11 font-medium">{item.i18n_key ? t(item.i18n_key) : item.name}</span>
                 </div>
                 {shouldShowCount && <span className="text-11 font-medium text-tertiary">{project.intake_count}</span>}
               </div>
