@@ -26,6 +26,7 @@ import { ButtonAvatars } from "../dropdowns/member/avatar";
 import { DeleteProjectViewModal } from "./delete-view-modal";
 import { CreateUpdateProjectViewModal } from "./modal";
 import { ViewQuickActions } from "./quick-actions";
+import { ViewStateCounts } from "./view-state-counts";
 
 type Props = {
   parentRef: React.RefObject<HTMLElement>;
@@ -90,6 +91,9 @@ export const ViewListItemAction = observer(function ViewListItemAction(props: Pr
         />
       )}
       <DeleteProjectViewModal data={view} isOpen={deleteViewModal} onClose={() => setDeleteViewModal(false)} />
+      {workspaceSlug && projectId && (
+        <ViewStateCounts workspaceSlug={workspaceSlug.toString()} projectId={projectId.toString()} view={view} />
+      )}
       <div className="cursor-default text-tertiary">
         <Tooltip tooltipContent={access === EViewAccess.PUBLIC ? "Public" : "Private"}>
           {access === EViewAccess.PUBLIC ? <Earth className="h-4 w-4" /> : <LockIcon className="h-4 w-4" />}
