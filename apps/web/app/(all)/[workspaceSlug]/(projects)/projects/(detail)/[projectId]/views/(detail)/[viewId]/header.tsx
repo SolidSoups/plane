@@ -26,6 +26,7 @@ import { Breadcrumbs, Header, BreadcrumbNavigationSearchDropdown } from "@plane/
 import { BreadcrumbLink } from "@/components/common/breadcrumb-link";
 import { SwitcherIcon, SwitcherLabel } from "@/components/common/switcher-label";
 import { DisplayFiltersSelection, FiltersDropdown, LayoutSelection } from "@/components/issues/issue-layouts/filters";
+import { ExportViewMenu } from "@/components/views/export/export-view-menu";
 import { ViewQuickActions } from "@/components/views/quick-actions";
 import { WorkItemFiltersToggle } from "@/components/work-item-filters/filters-toggle";
 // hooks
@@ -196,6 +197,14 @@ export const ProjectViewIssuesHeader = observer(function ProjectViewIssuesHeader
             </FiltersDropdown>
           )}
         </>
+        {viewId && (
+          <ExportViewMenu
+            workspaceSlug={workspaceSlug.toString()}
+            projectId={projectId.toString()}
+            viewId={viewId}
+            viewName={viewDetails.name}
+          />
+        )}
         {canUserCreateIssue && (
           <Button
             variant="primary"
